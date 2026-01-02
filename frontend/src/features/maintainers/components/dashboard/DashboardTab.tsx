@@ -117,6 +117,44 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
     };
   }, [selectedProjects]);
 
+  // Helper function to format time ago
+  const formatTimeAgo = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    const diffMonths = Math.floor(diffDays / 30);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 30) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    return `${diffMonths} month${diffMonths !== 1 ? 's' : ''} ago`;
+  };
+
+  // Helper function to parse time ago for sorting
+  const parseTimeAgo = (timeAgo: string): number => {
+    const now = new Date().getTime();
+    if (timeAgo.includes('minute')) {
+      const mins = parseInt(timeAgo) || 0;
+      return now - mins * 60000;
+    }
+    if (timeAgo.includes('hour')) {
+      const hours = parseInt(timeAgo) || 0;
+      return now - hours * 3600000;
+    }
+    if (timeAgo.includes('day')) {
+      const days = parseInt(timeAgo) || 0;
+      return now - days * 86400000;
+    }
+    if (timeAgo.includes('month')) {
+      const months = parseInt(timeAgo) || 0;
+      return now - months * 30 * 86400000;
+    }
+    return now;
+  };
+
   // Calculate stats from real data
   const stats: StatCard[] = useMemo(() => {
     const now = new Date();
@@ -219,45 +257,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
     });
 
     return combined.slice(0, 5); // Top 5 most recent
-  }, [issues, prs]);
-
-  // Helper function to format time ago
-  const formatTimeAgo = (date: Date): string => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    const diffMonths = Math.floor(diffDays / 30);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-    if (diffDays < 30) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-    return `${diffMonths} month${diffMonths !== 1 ? 's' : ''} ago`;
-  };
-
-  // Helper function to parse time ago for sorting
-  const parseTimeAgo = (timeAgo: string): number => {
-    const now = new Date().getTime();
-    if (timeAgo.includes('minute')) {
-      const mins = parseInt(timeAgo) || 0;
-      return now - mins * 60000;
-    }
-    if (timeAgo.includes('hour')) {
-      const hours = parseInt(timeAgo) || 0;
-      return now - hours * 3600000;
-    }
-    if (timeAgo.includes('day')) {
-      const days = parseInt(timeAgo) || 0;
-      return now - days * 86400000;
-    }
-    if (timeAgo.includes('month')) {
-      const months = parseInt(timeAgo) || 0;
-      return now - months * 30 * 86400000;
-    }
-    return now;
-  };
+  }, [issues, prs, formatTimeAgo, parseTimeAgo]);
 
   // Generate chart data from real data (last 6 months)
   const chartData: ChartDataPoint[] = useMemo(() => {
