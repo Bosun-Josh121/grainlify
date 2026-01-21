@@ -56,7 +56,7 @@ export function InstallGitHubAppModal({ isOpen, onClose, onSuccess }: InstallGit
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -222,10 +222,10 @@ export function InstallGitHubAppModal({ isOpen, onClose, onSuccess }: InstallGit
 
           {/* You stay in control */}
           <div className={`p-3 rounded-[10px] ${
-            darkTheme ? 'bg-green-500/10 border border-green-500/30' : 'bg-green-50 border border-green-200'
+            darkTheme ? 'bg-[#c9983a]/10 border border-[#c9983a]/30' : 'bg-yellow-50 border border-yellow-200'
           }`}>
             <p className={`text-[12px] font-medium transition-colors ${
-              darkTheme ? 'text-green-400' : 'text-green-700'
+              darkTheme ? 'text-[#e8c77f]' : 'text-[#856404]'
             }`}>
               <strong>You stay in control:</strong> Choose which repositories to connect during installation. Update permissions whenever you want.
             </p>
@@ -233,17 +233,36 @@ export function InstallGitHubAppModal({ isOpen, onClose, onSuccess }: InstallGit
 
           {/* Don't show again */}
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(e) => setDontShowAgain(e.target.checked)}
-              disabled={isInstalling}
-              className={`w-4 h-4 rounded border-2 checked:bg-[#c9983a] checked:border-[#c9983a] focus:ring-2 focus:ring-[#c9983a]/40 transition-all cursor-pointer ${
-                darkTheme
-                  ? 'border-[#b8a898]/50 bg-[#2d2820]'
-                  : 'border-[#7a6b5a]/50 bg-[#e8dfd0]'
-              } ${isInstalling ? 'opacity-50 cursor-not-allowed' : ''}`}
-            />
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={dontShowAgain}
+                onChange={(e) => setDontShowAgain(e.target.checked)}
+                disabled={isInstalling}
+                className={`w-4 h-4 rounded border-2 checked:bg-[#c9983a] checked:border-[#c9983a] focus:ring-2 focus:ring-[#c9983a]/40 transition-all cursor-pointer appearance-none ${
+                  darkTheme
+                    ? 'border-[#b8a898]/50 bg-[#2d2820]'
+                    : 'border-[#7a6b5a]/50 bg-[#e8dfd0]'
+                } ${isInstalling ? 'opacity-50 cursor-not-allowed' : ''} ${
+                  dontShowAgain ? 'bg-[#c9983a] border-[#c9983a]' : ''
+                }`}
+              />
+              {dontShowAgain && (
+                <svg 
+                  className="absolute top-0 left-0 w-4 h-4 pointer-events-none"
+                  fill="none" 
+                  viewBox="0 0 16 16"
+                >
+                  <path 
+                    d="M13.5 4.5L6 12L2.5 8.5" 
+                    stroke="white" 
+                    strokeWidth="2.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </div>
             <span className={`text-[12px] transition-colors ${
               darkTheme ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
             }`}>

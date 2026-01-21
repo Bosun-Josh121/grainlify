@@ -38,6 +38,11 @@ async function apiRequest<T>(
   const { requiresAuth = false, headers = {}, ...fetchOptions } = options;
 
   const url = `${API_BASE_URL}${endpoint}`;
+  if (endpoint === '/ecosystems') {
+    console.log('API Request - URL:', url);
+    console.log('API Request - API_BASE_URL:', API_BASE_URL);
+    console.log('API Request - endpoint:', endpoint);
+  }
   const requestHeaders: HeadersInit = {
     ...headers,
   };
@@ -63,10 +68,18 @@ async function apiRequest<T>(
 
   let response: Response;
   try {
+    if (endpoint === '/ecosystems') {
+      console.log('API Request - Making fetch call to:', url);
+      console.log('API Request - Headers:', requestHeaders);
+    }
     response = await fetch(url, {
       ...fetchOptions,
       headers: requestHeaders,
     });
+    if (endpoint === '/ecosystems') {
+      console.log('API Request - Response status:', response.status);
+      console.log('API Request - Response ok:', response.ok);
+    }
   } catch (err) {
     // Network error (CORS, connection refused, etc.)
     if (err instanceof TypeError && err.message.includes('fetch')) {
@@ -83,6 +96,17 @@ async function apiRequest<T>(
       throw new Error('Authentication failed. Please sign in again.');
     }
 
+    if (response.status === 403) {
+      // Forbidden - user doesn't have permission
+      try {
+        const errorData = await response.json();
+        const errorMsg = errorData.message || errorData.error || 'Access forbidden';
+        throw new Error(`Permission denied: ${errorMsg}. You may need admin privileges to perform this action.`);
+      } catch {
+        throw new Error('Permission denied: You do not have permission to perform this action. Admin privileges may be required.');
+      }
+    }
+
     // Try to parse error response
     try {
       const errorData = await response.json();
@@ -94,7 +118,11 @@ async function apiRequest<T>(
 
   // Parse JSON response
   try {
-    return await response.json();
+    const jsonData = await response.json();
+    if (endpoint === '/ecosystems') {
+      console.log('API Request - Parsed JSON response:', jsonData);
+    }
+    return jsonData;
   } catch (err) {
     // If response is empty or not JSON, return empty array for list endpoints
     if (endpoint.includes('/projects/mine') || endpoint.includes('/projects')) {
@@ -433,8 +461,8 @@ export const getEcosystems = () =>
       id: string;
       slug: string;
       name: string;
-      description: string;
-      website_url: string;
+      description: string | null;
+      website_url: string | null;
       status: string;
       project_count: number;
       user_count: number;
@@ -442,6 +470,56 @@ export const getEcosystems = () =>
       updated_at: string;
     }>;
   }>('/ecosystems');
+
+export const createEcosystem = (data: {
+  name: string;
+  description?: string;
+  website_url?: string;
+  status: 'active' | 'inactive';
+}) =>
+  apiRequest<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    website_url: string;
+    status: string;
+    project_count: number;
+    user_count: number;
+    created_at: string;
+    updated_at: string;
+  }>('/admin/ecosystems', {
+    requiresAuth: true,
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const getAdminEcosystems = () =>
+  apiRequest<{
+    ecosystems: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      description: string | null;
+      website_url: string | null;
+      status: string;
+      project_count: number;
+      user_count: number;
+      created_at: string;
+      updated_at: string;
+    }>;
+  }>('/admin/ecosystems', {
+    requiresAuth: true,
+    method: 'GET',
+  });
+
+export const deleteEcosystem = (id: string) =>
+  apiRequest<{
+    ok: boolean;
+  }>(`/admin/ecosystems/${id}`, {
+    requiresAuth: true,
+    method: 'DELETE',
+  });
 
 // Leaderboard
 export const getLeaderboard = (limit = 10, offset = 0) =>
@@ -458,6 +536,20 @@ export const getLeaderboard = (limit = 10, offset = 0) =>
     trend: 'up' | 'down' | 'same';
     trendValue: number;
   }>>(`/leaderboard?limit=${limit}&offset=${offset}`);
+
+// Admin Bootstrap
+export const bootstrapAdmin = (bootstrapToken: string) =>
+  apiRequest<{
+    ok: boolean;
+    token: string;
+    role: string;
+  }>('/admin/bootstrap', {
+    requiresAuth: true,
+    method: 'POST',
+    headers: {
+      'X-Admin-Bootstrap-Token': bootstrapToken,
+    },
+  });
 
 // KYC
 export const startKYCVerification = () =>

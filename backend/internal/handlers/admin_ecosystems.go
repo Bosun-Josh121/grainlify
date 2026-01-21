@@ -176,6 +176,36 @@ WHERE id = $1
 	}
 }
 
+func (h *EcosystemsAdminHandler) Delete() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if h.db == nil || h.db.Pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+		ecoID, err := uuid.Parse(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_ecosystem_id"})
+		}
+
+		// Check if ecosystem has any projects
+		var projectCount int64
+		if err := h.db.Pool.QueryRow(c.Context(), `SELECT COUNT(*) FROM projects WHERE ecosystem_id = $1`, ecoID).Scan(&projectCount); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystem_delete_check_failed"})
+		}
+		if projectCount > 0 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ecosystem_has_projects", "message": "Cannot delete ecosystem with existing projects"})
+		}
+
+		ct, err := h.db.Pool.Exec(c.Context(), `DELETE FROM ecosystems WHERE id = $1`, ecoID)
+		if errors.Is(err, pgx.ErrNoRows) || ct.RowsAffected() == 0 {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "ecosystem_not_found"})
+		}
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystem_delete_failed"})
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": true})
+	}
+}
+
 func normalizeSlug(s string) string {
 	v := strings.ToLower(strings.TrimSpace(s))
 	v = strings.ReplaceAll(v, " ", "-")

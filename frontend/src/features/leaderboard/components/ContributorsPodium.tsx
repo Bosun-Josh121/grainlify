@@ -5,14 +5,21 @@ import { LeaderData } from '../types';
 interface ContributorsPodiumProps {
   topThree: LeaderData[];
   isLoaded: boolean;
+  actualCount?: number; // Number of actual contributors (not padded)
 }
 
-export function ContributorsPodium({ topThree, isLoaded }: ContributorsPodiumProps) {
+export function ContributorsPodium({ topThree, isLoaded, actualCount }: ContributorsPodiumProps) {
   const { theme } = useTheme();
+  
+  // Determine how many boxes to show based on actual contributor count
+  const showCount = actualCount !== undefined ? Math.min(actualCount, 3) : 3;
+  const showSecond = showCount >= 2;
+  const showThird = showCount >= 3;
 
   return (
     <div className="flex items-end justify-center gap-4 mt-8">
       {/* 2nd Place */}
+      {showSecond && (
       <div className={`flex flex-col items-center transition-all duration-700 delay-700 ${
         isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
       }`}>
@@ -44,6 +51,7 @@ export function ContributorsPodium({ topThree, isLoaded }: ContributorsPodiumPro
           }`}>#2</span>
         </div>
       </div>
+      )}
 
       {/* 1st Place */}
       <div className={`flex flex-col items-center -mt-8 transition-all duration-700 delay-600 ${
@@ -116,6 +124,7 @@ export function ContributorsPodium({ topThree, isLoaded }: ContributorsPodiumPro
       </div>
 
       {/* 3rd Place */}
+      {showThird && (
       <div className={`flex flex-col items-center transition-all duration-700 delay-800 ${
         isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
       }`}>
@@ -147,6 +156,7 @@ export function ContributorsPodium({ topThree, isLoaded }: ContributorsPodiumPro
           }`}>#3</span>
         </div>
       </div>
+      )}
     </div>
   );
 }

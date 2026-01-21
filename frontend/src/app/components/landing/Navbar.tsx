@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Menu, X, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
+import grainlifyLogo from '../../assets/grainlify_log.svg';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -17,7 +18,7 @@ export function Navbar() {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#c9983a] to-[#d4af37] shadow-[0_2px_8px_rgba(201,152,58,0.4)]" />
+            <img src={grainlifyLogo} alt="Grainlify" className="w-8 h-8 grainlify-logo" />
             <span className={`text-xl font-semibold transition-colors ${
               theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
             }`}>Grainlify</span>

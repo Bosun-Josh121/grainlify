@@ -8,6 +8,7 @@ import {
   CircleDot, Clock, Moon, Sun, Shield, Code
 } from 'lucide-react';
 import { useAuth } from '../../shared/contexts/AuthContext';
+import grainlifyLogo from '../../assets/grainlify_log.svg';
 import { useTheme } from '../../shared/contexts/ThemeContext';
 import { LanguageIcon } from '../../shared/components/LanguageIcon';
 import { UserProfileDropdown } from '../../shared/components/UserProfileDropdown';
@@ -184,14 +185,10 @@ export function Dashboard() {
             {/* Logo/Avatar */}
             <div className={`flex items-center mb-6 transition-all ${isSidebarCollapsed ? 'px-[8px] justify-center' : 'px-2 justify-start'}`}>
               {isSidebarCollapsed ? (
-                <div className="w-12 h-12 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] shadow-md border border-white/15 flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-white drop-shadow-md" />
-                </div>
+                <img src={grainlifyLogo} alt="Grainlify" className="w-12 h-12 grainlify-logo" />
               ) : (
                 <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 rounded-[12px] backdrop-blur-[20px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] shadow-[0_8px_24px_rgba(162,121,44,0.35)] flex items-center justify-center border border-white/15">
-                    <Sparkles className="w-6 h-6 text-white drop-shadow-md" />
-                  </div>
+                  <img src={grainlifyLogo} alt="Grainlify" className="w-12 h-12 grainlify-logo" />
                   <span className={`text-[20px] font-bold transition-colors ${
                     darkTheme ? 'text-[#f5efe5]' : 'text-[#2d2820]'
                   }`}>Grainlify</span>

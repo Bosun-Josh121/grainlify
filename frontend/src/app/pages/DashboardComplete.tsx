@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Bell, Settings, LogOut, Compass, Grid3x3, Calendar, 
   Globe, Users, FolderGit2, Trophy, User, Database, Plus, 
   FileText, ChevronRight, Sparkles, Heart, 
   Star, GitFork, ArrowUpRight, Target, Zap, ChevronDown, 
-  CircleDot, Clock, Moon, Sun, Shield
+  CircleDot, Clock, Moon, Sun, Shield, Send, X
 } from 'lucide-react';
+import grainlifyLogo from '../../assets/grainlify_log.svg';
 import { useAuth } from '../../shared/contexts/AuthContext';
 import { useTheme } from '../../shared/contexts/ThemeContext';
 import { LanguageIcon } from '../../shared/components/LanguageIcon';
@@ -19,6 +20,8 @@ import { DataPage } from '../../features/dashboard/pages/DataPage';
 import { LeaderboardPage } from '../../features/leaderboard/pages/LeaderboardPage';
 import { BlogPage } from '../../features/blog/pages/BlogPage';
 import { SettingsPage } from '../../features/settings/pages/SettingsPage';
+import { bootstrapAdmin, setAuthToken } from '../../shared/api/client';
+import { Modal, ModalFooter, ModalButton, ModalInput } from '../../shared/components/ui/Modal';
 
 export function DashboardComplete() {
   const { userRole, logout } = useAuth();
@@ -26,10 +29,60 @@ export function DashboardComplete() {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState('discover');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [adminAuthenticated, setAdminAuthenticated] = useState(() => {
+    return sessionStorage.getItem('admin_authenticated') === 'true';
+  });
 
   const handleLogout = () => {
+    // Clear admin authentication on logout
+    setAdminAuthenticated(false);
+    sessionStorage.removeItem('admin_authenticated');
     logout();
     navigate('/');
+  };
+
+  const handleAdminClick = () => {
+    // If already authenticated as admin in this session, go directly to admin page
+    if (adminAuthenticated) {
+      setCurrentPage('admin');
+      return;
+    }
+    // Always show password modal for non-authenticated users (even if they have admin role)
+    setShowAdminPasswordModal(true);
+  };
+
+  const handleAdminPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminPassword.trim()) return;
+
+    setIsAuthenticating(true);
+    try {
+      const response = await bootstrapAdmin(adminPassword.trim());
+      
+      // Update token with the new admin token
+      setAuthToken(response.token);
+      
+      // Mark as authenticated in this session
+      setAdminAuthenticated(true);
+      sessionStorage.setItem('admin_authenticated', 'true');
+      
+      // Close modal and navigate to admin page
+      setShowAdminPasswordModal(false);
+      setAdminPassword('');
+      setCurrentPage('admin');
+      
+      // Refresh page to update auth context with new role
+      window.location.reload();
+    } catch (error) {
+      console.error('Admin authentication failed:', error);
+      alert(error instanceof Error ? error.message : 'Invalid password. Please try again.');
+      setAdminPassword('');
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
   // Role-based navigation items
@@ -48,10 +101,8 @@ export function DashboardComplete() {
     { id: 'blog', icon: FileText, label: 'Grainlify Blog' },
   ];
 
-  // Add Admin menu item only for admin users
-  if (userRole === 'admin') {
-    navItems.push({ id: 'admin', icon: Shield, label: 'Admin Panel' });
-  }
+  // Add Admin menu item for all users (requires password)
+  navItems.push({ id: 'admin', icon: Shield, label: 'Admin Panel' });
 
   return (
     <div className={`min-h-screen relative overflow-hidden transition-colors ${
@@ -96,12 +147,10 @@ export function DashboardComplete() {
             {/* Logo/Avatar */}
             <div className={`flex items-center mb-6 transition-all ${isSidebarCollapsed ? 'px-[18px] justify-center' : 'px-6 justify-start'}`}>
               {isSidebarCollapsed ? (
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#c9983a] to-[#a67c2e] shadow-md border border-white/15" />
+                <img src={grainlifyLogo} alt="Grainlify" className="w-12 h-12 grainlify-logo" />
               ) : (
                 <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 rounded-[18px] backdrop-blur-[20px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] shadow-[0_8px_24px_rgba(162,121,44,0.35)] flex items-center justify-center border border-white/15">
-                    <Sparkles className="w-6 h-6 text-white drop-shadow-md" />
-                  </div>
+                  <img src={grainlifyLogo} alt="Grainlify" className="w-12 h-12 grainlify-logo" />
                   <span className={`text-[20px] font-bold transition-colors ${
                     theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
                   }`}>Grainlify</span>
@@ -122,7 +171,7 @@ export function DashboardComplete() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setCurrentPage(item.id)}
+                    onClick={() => item.id === 'admin' ? handleAdminClick() : setCurrentPage(item.id)}
                     className={`group w-full flex items-center rounded-[12px] transition-all duration-300 ${
                       isSidebarCollapsed ? 'justify-center px-0 py-4' : 'justify-start px-3 py-2.5'
                     } ${
@@ -265,10 +314,78 @@ export function DashboardComplete() {
           {currentPage === 'data' && <DataPage />}
           {currentPage === 'leaderboard' && <LeaderboardPage />}
           {currentPage === 'blog' && <BlogPage />}
-          {currentPage === 'admin' && <AdminPage />}
+          {currentPage === 'admin' && adminAuthenticated && <AdminPage />}
+          {currentPage === 'admin' && !adminAuthenticated && (
+            <div className="flex items-center justify-center h-full">
+              <div className={`text-center p-8 rounded-[24px] backdrop-blur-[40px] border ${
+                theme === 'dark'
+                  ? 'bg-white/[0.08] border-white/10 text-[#d4d4d4]'
+                  : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
+              }`}>
+                <Shield className="w-16 h-16 mx-auto mb-4 text-[#c9983a]" />
+                <h2 className="text-2xl font-bold mb-2">Admin Access Required</h2>
+                <p className="mb-4">Please authenticate to access the admin panel.</p>
+                <button
+                  onClick={() => setShowAdminPasswordModal(true)}
+                  className="px-6 py-2 bg-[#c9983a] text-white rounded-[12px] hover:bg-[#a67c2e] transition-colors"
+                >
+                  Authenticate
+                </button>
+              </div>
+            </div>
+          )}
           {currentPage === 'settings' && <SettingsPage />}
         </div>
       </main>
+
+      {/* Admin Password Modal */}
+      <Modal
+        isOpen={showAdminPasswordModal}
+        onClose={() => {
+          setShowAdminPasswordModal(false);
+          setAdminPassword('');
+        }}
+        title="Admin Authentication"
+        icon={<Shield className="w-6 h-6 text-[#c9983a]" />}
+        width="md"
+      >
+        <form onSubmit={handleAdminPasswordSubmit}>
+          <div className="space-y-4">
+            <p className={`text-sm ${
+              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
+              Enter the admin password to access the admin panel.
+            </p>
+            <ModalInput
+              type="password"
+              placeholder="Enter admin password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          <ModalFooter>
+            <ModalButton
+              variant="secondary"
+              onClick={() => {
+                setShowAdminPasswordModal(false);
+                setAdminPassword('');
+              }}
+              disabled={isAuthenticating}
+            >
+              Cancel
+            </ModalButton>
+            <ModalButton
+              variant="primary"
+              type="submit"
+              disabled={isAuthenticating || !adminPassword.trim()}
+            >
+              {isAuthenticating ? 'Authenticating...' : 'Authenticate'}
+            </ModalButton>
+          </ModalFooter>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -795,7 +912,10 @@ function OpenSourceWeekPage() {
 }
 
 function EcosystemsPage() {
+  console.log('=== EcosystemsPage FUNCTION CALLED ===');
+  console.log('EcosystemsPage component rendered');
   const { theme } = useTheme();
+  console.log('Theme:', theme);
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -803,6 +923,108 @@ function EcosystemsPage() {
     status: 'active',
     websiteUrl: ''
   });
+  const [ecosystems, setEcosystems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch ecosystems function
+  const fetchEcosystems = async () => {
+    console.log('fetchEcosystems function called');
+    setIsLoading(true);
+    try {
+      const { getEcosystems } = await import('../../shared/api/client');
+      console.log('Fetching ecosystems from API...');
+      const response = await getEcosystems();
+      console.log('Ecosystems API response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Response.ecosystems:', response?.ecosystems);
+      console.log('Is array?', Array.isArray(response?.ecosystems));
+      
+      // Handle different response structures
+      let ecosystemsArray: any[] = [];
+      
+      if (response && Array.isArray(response)) {
+        // Response is directly an array
+        ecosystemsArray = response;
+        console.log('Response is direct array');
+      } else if (response && response.ecosystems && Array.isArray(response.ecosystems)) {
+        // Response has ecosystems property
+        ecosystemsArray = response.ecosystems;
+        console.log('Response has ecosystems property');
+      } else if (response && typeof response === 'object') {
+        // Try to find any array property
+        const keys = Object.keys(response);
+        console.log('Response keys:', keys);
+        for (const key of keys) {
+          if (Array.isArray((response as any)[key])) {
+            ecosystemsArray = (response as any)[key];
+            console.log(`Found array in key: ${key}`);
+            break;
+          }
+        }
+      }
+      
+      if (ecosystemsArray.length === 0) {
+        console.warn('No ecosystems found in response:', response);
+        setEcosystems([]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Transform API response to match UI format
+      const transformed = ecosystemsArray.map((eco: any) => {
+        const firstLetter = eco.name ? eco.name.charAt(0).toUpperCase() : '?';
+        const colors = [
+          'from-[#c9983a] to-[#a67c2e]',
+          'from-[#8b5cf6] to-[#7c3aed]',
+          'from-[#06b6d4] to-[#0891b2]',
+          'from-[#10b981] to-[#059669]',
+          'from-[#f59e0b] to-[#d97706]',
+          'from-[#ef4444] to-[#dc2626]',
+        ];
+        const colorIndex = eco.name ? eco.name.length % colors.length : 0;
+        return {
+          id: eco.id,
+          name: eco.name || 'Unnamed Ecosystem',
+          slug: eco.slug || '',
+          description: eco.description || 'No description available.',
+          projects: eco.project_count || 0,
+          contributors: eco.user_count || 0,
+          website_url: eco.website_url || null,
+          status: eco.status || 'active',
+          letter: firstLetter,
+          color: colors[colorIndex],
+          languages: [] // Can be populated later if needed
+        };
+      });
+      console.log('Transformed ecosystems:', transformed);
+      setEcosystems(transformed);
+    } catch (error) {
+      console.error('Failed to fetch ecosystems:', error);
+      console.error('Error details:', error instanceof Error ? error.message : error);
+      setEcosystems([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch ecosystems on mount and when updated
+  useEffect(() => {
+    console.log('EcosystemsPage useEffect running');
+    console.log('Calling fetchEcosystems...');
+    fetchEcosystems();
+    
+    // Listen for ecosystem updates
+    const handleUpdate = () => {
+      console.log('Ecosystems updated event received');
+      fetchEcosystems();
+    };
+    window.addEventListener('ecosystems-updated', handleUpdate);
+    
+    return () => {
+      window.removeEventListener('ecosystems-updated', handleUpdate);
+    };
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -842,125 +1064,11 @@ function EcosystemsPage() {
     });
   };
 
-  const ecosystems = [
-    {
-      id: 1,
-      letter: 'W',
-      name: 'Web3 Ecosystem',
-      projects: 420,
-      contributors: 38,
-      description: 'Projects building decentralized protocols, tooling, and on-chain value',
-      languages: [
-        { name: 'Rust', percentage: 31, color: '#CE422B' },
-        { name: 'TypeScript', percentage: 27, color: '#3178C6' },
-      ],
-      color: 'from-purple-600 to-blue-600',
-    },
-    {
-      id: 2,
-      letter: 'A',
-      name: 'AI & ML Ecosystem',
-      projects: 310,
-      contributors: 22,
-      description: 'Frameworks and tooling for machine learning and AI development',
-      languages: [
-        { name: 'Python', percentage: 48, color: '#3776AB' },
-        { name: 'C++', percentage: 21, color: '#00599C' },
-      ],
-      color: 'from-blue-500 to-cyan-500',
-    },
-    {
-      id: 3,
-      letter: 'B',
-      name: 'Blockchain Infrastructure',
-      projects: 560,
-      contributors: 45,
-      description: 'Core blockchain infrastructures, consensus mechanisms, and network protocols',
-      languages: [
-        { name: 'Go', percentage: 38, color: '#00ADD8' },
-        { name: 'Rust', percentage: 29, color: '#CE422B' },
-      ],
-      color: 'from-indigo-600 to-purple-600',
-    },
-    {
-      id: 4,
-      letter: 'D',
-      name: 'Developer Tools',
-      projects: 720,
-      contributors: 68,
-      description: 'Essential tools and libraries for modern software development',
-      languages: [
-        { name: 'JavaScript', percentage: 42, color: '#F7DF1E' },
-        { name: 'TypeScript', percentage: 35, color: '#3178C6' },
-      ],
-      color: 'from-orange-500 to-red-500',
-    },
-    {
-      id: 5,
-      letter: 'C',
-      name: 'Cloud-Native',
-      projects: 650,
-      contributors: 52,
-      description: 'Container orchestration, microservices, and cloud infrastructure solutions',
-      languages: [
-        { name: 'Go', percentage: 51, color: '#00ADD8' },
-        { name: 'Java', percentage: 18, color: '#007396' },
-      ],
-      color: 'from-green-500 to-teal-500',
-    },
-    {
-      id: 6,
-      letter: 'S',
-      name: 'Security & Privacy',
-      projects: 390,
-      contributors: 28,
-      description: 'Cybersecurity tools, encryption libraries, and privacy-preserving technologies',
-      languages: [
-        { name: 'C', percentage: 34, color: '#555555' },
-        { name: 'Rust', percentage: 28, color: '#CE422B' },
-      ],
-      color: 'from-red-600 to-pink-600',
-    },
-    {
-      id: 7,
-      letter: 'D',
-      name: 'Data Science',
-      projects: 490,
-      contributors: 35,
-      description: 'Data engineering, analytics, and visualization tools for insights',
-      languages: [
-        { name: 'Python', percentage: 56, color: '#3776AB' },
-        { name: 'R', percentage: 22, color: '#276DC3' },
-      ],
-      color: 'from-cyan-600 to-blue-700',
-    },
-    {
-      id: 8,
-      letter: 'M',
-      name: 'Mobile Development',
-      projects: 640,
-      contributors: 41,
-      description: 'Frameworks and tools for iOS, Android, and cross-platform mobile apps',
-      languages: [
-        { name: 'Swift', percentage: 36, color: '#FA7343' },
-        { name: 'Kotlin', percentage: 31, color: '#7F52FF' },
-      ],
-      color: 'from-pink-500 to-rose-500',
-    },
-    {
-      id: 9,
-      letter: 'G',
-      name: 'Gaming & Game Engines',
-      projects: 420,
-      contributors: 33,
-      description: 'Game development frameworks, engines, and gaming infrastructure',
-      languages: [
-        { name: 'C++', percentage: 44, color: '#00599C' },
-        { name: 'C#', percentage: 28, color: '#239120' },
-      ],
-      color: 'from-violet-600 to-purple-700',
-    },
-  ];
+  // Filter ecosystems based on search query
+  const filteredEcosystems = ecosystems.filter(eco =>
+    eco.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (eco.description && eco.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -1000,6 +1108,8 @@ function EcosystemsPage() {
           <input
             type="text"
             placeholder="Search ecosystems..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className={`w-full pl-12 pr-4 py-3.5 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] shadow-[inset_0px_0px_4px_0px_rgba(0,0,0,0.12)] relative ${
               theme === 'dark'
                 ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
@@ -1010,8 +1120,29 @@ function EcosystemsPage() {
       </div>
 
       {/* Ecosystems Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {ecosystems.map((ecosystem) => (
+      {isLoading ? (
+        <div className={`text-center py-12 ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+          Loading ecosystems...
+        </div>
+      ) : filteredEcosystems.length === 0 ? (
+        <div className={`text-center py-12 ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+          {searchQuery ? 'No ecosystems found matching your search.' : 'No ecosystems available yet.'}
+          {!isLoading && ecosystems.length > 0 && (
+            <div className="mt-2 text-xs opacity-70">
+              (Filtered from {ecosystems.length} ecosystems)
+            </div>
+          )}
+          {!isLoading && ecosystems.length === 0 && (
+            <div className="mt-4 text-xs opacity-50">
+              Debug: ecosystems array is empty. Check browser console for API errors.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredEcosystems.map((ecosystem) => {
+            console.log('Rendering ecosystem:', ecosystem);
+            return (
           <div
             key={ecosystem.id}
             className={`backdrop-blur-[30px] rounded-[20px] border p-6 transition-all cursor-pointer group ${
@@ -1059,23 +1190,26 @@ function EcosystemsPage() {
               {ecosystem.description}
             </p>
 
-            {/* Languages */}
-            <div className="flex items-center gap-3">
-              {ecosystem.languages.map((lang, idx) => (
-                <div key={idx} className="flex items-center gap-1.5">
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full shadow-sm" 
-                    style={{ backgroundColor: lang.color }}
-                  />
-                  <span className={`text-[11px] transition-colors ${
-                    theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                  }`}>{lang.percentage}%</span>
-                </div>
-              ))}
-            </div>
+            {/* Website Link */}
+            {ecosystem.website_url && (
+              <div className="flex items-center gap-2 mt-4">
+                <Globe className={`w-4 h-4 ${theme === 'dark' ? 'text-[#c9983a]' : 'text-[#8b6f3a]'}`} />
+                <a
+                  href={ecosystem.website_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`text-[12px] hover:underline transition-colors ${
+                    theme === 'dark' ? 'text-[#c9983a]' : 'text-[#8b6f3a]'
+                  }`}
+                >
+                  Visit Website
+                </a>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
 
       {/* Request Ecosystem Section */}
       <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${
@@ -1117,7 +1251,7 @@ function EcosystemsPage() {
 
       {/* Add Ecosystem Modal (Admin Only) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000]" onClick={() => setShowAddModal(false)}>
           <div 
             className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.12)] p-8 w-[500px] max-w-[90vw] transition-colors ${
               theme === 'dark'
@@ -1231,7 +1365,7 @@ function EcosystemsPage() {
 
       {/* Request Ecosystem Modal */}
       {showRequestModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowRequestModal(false)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000]" onClick={() => setShowRequestModal(false)}>
           <div 
             className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.12)] p-8 w-[550px] max-w-[90vw] max-h-[90vh] overflow-y-auto transition-colors ${
               theme === 'dark'
@@ -1241,17 +1375,29 @@ function EcosystemsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-6">
-              <div>
-                <h3 className={`text-[24px] font-bold mb-2 transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>Request Ecosystem Addition</h3>
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center shadow-[0_6px_20px_rgba(162,121,44,0.3)] border border-white/10">
+                    <Sparkles className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className={`text-[24px] font-bold transition-colors ${
+                    theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>Request Ecosystem Addition</h3>
+                </div>
                 <p className={`text-[14px] transition-colors ${
                   theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
                 }`}>Fill out the form below and we'll review your request</p>
               </div>
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center shadow-[0_6px_20px_rgba(162,121,44,0.3)] border border-white/10">
-                <Sparkles className="w-6 h-6 text-white" />
-              </div>
+              <button
+                onClick={() => setShowRequestModal(false)}
+                className={`p-2 rounded-[10px] transition-all hover:scale-110 flex-shrink-0 ml-4 ${
+                  theme === 'dark'
+                    ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
+                    : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
+                }`}
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             
             <form onSubmit={handleRequestSubmit}>
@@ -1362,10 +1508,10 @@ function EcosystemsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 flex items-center justify-center gap-2 hover:scale-[1.02]"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  Submit Request
+                  <Send className="w-4 h-4 flex-shrink-0" />
+                  <span>Submit Request</span>
                 </button>
               </div>
             </form>
@@ -1379,6 +1525,7 @@ function EcosystemsPage() {
 function AdminPage() {
   const { theme } = useTheme();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -1386,18 +1533,51 @@ function AdminPage() {
     websiteUrl: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Add/remove class to body when modal is open to blur sidebar
+  useEffect(() => {
+    if (showAddModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showAddModal]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission here
-    console.log('Admin - Add Ecosystem:', formData);
-    setShowAddModal(false);
-    // Reset form
-    setFormData({
-      name: '',
-      description: '',
-      status: 'active',
-      websiteUrl: ''
-    });
+    setIsSubmitting(true);
+    
+    try {
+      const { createEcosystem } = await import('../../shared/api/client');
+      await createEcosystem({
+        name: formData.name,
+        description: formData.description || undefined,
+        website_url: formData.websiteUrl || undefined,
+        status: formData.status as 'active' | 'inactive',
+      });
+      
+      // Success - close modal and reset form
+      setShowAddModal(false);
+      setFormData({
+        name: '',
+        description: '',
+        status: 'active',
+        websiteUrl: ''
+      });
+      
+      // Refresh ecosystems list by triggering a custom event
+      window.dispatchEvent(new CustomEvent('ecosystems-updated'));
+      
+      // Optionally refresh the page to show new ecosystem
+      // window.location.reload();
+    } catch (error) {
+      console.error('Failed to create ecosystem:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create ecosystem. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1466,69 +1646,6 @@ function AdminPage() {
           </button>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-colors ${
-            theme === 'dark'
-              ? 'bg-white/[0.06] border-white/10'
-              : 'bg-white/[0.12] border-white/20'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={`text-[12px] mb-1 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Total Ecosystems</p>
-                <p className={`text-[28px] font-bold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>9</p>
-              </div>
-              <div className="p-3 rounded-[12px] bg-gradient-to-br from-[#c9983a]/20 to-[#a67c2e]/10 border border-[#c9983a]/20">
-                <Globe className="w-6 h-6 text-[#c9983a]" />
-              </div>
-            </div>
-          </div>
-
-          <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-colors ${
-            theme === 'dark'
-              ? 'bg-white/[0.06] border-white/10'
-              : 'bg-white/[0.12] border-white/20'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={`text-[12px] mb-1 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Pending Requests</p>
-                <p className={`text-[28px] font-bold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>3</p>
-              </div>
-              <div className="p-3 rounded-[12px] bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
-                <Clock className="w-6 h-6 text-blue-500" />
-              </div>
-            </div>
-          </div>
-
-          <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-colors ${
-            theme === 'dark'
-              ? 'bg-white/[0.06] border-white/10'
-              : 'bg-white/[0.12] border-white/20'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={`text-[12px] mb-1 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Active Projects</p>
-                <p className={`text-[28px] font-bold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>4,420</p>
-              </div>
-              <div className="p-3 rounded-[12px] bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
-                <Target className="w-6 h-6 text-green-500" />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Info Message */}
         <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 flex items-start gap-4 transition-colors ${
           theme === 'dark'
@@ -1553,7 +1670,7 @@ function AdminPage() {
 
       {/* Add Ecosystem Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in" onClick={() => setShowAddModal(false)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000] animate-in fade-in" onClick={() => setShowAddModal(false)} style={{ backdropFilter: 'blur(8px)' }}>
           <div 
             className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.12)] p-8 w-[550px] max-w-[90vw] transition-all animate-in zoom-in-95 ${
               theme === 'dark'

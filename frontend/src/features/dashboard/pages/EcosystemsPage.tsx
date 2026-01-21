@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { Search, Globe, Plus, ArrowUpRight, Sparkles } from 'lucide-react';
+import { Search, Globe, Plus, ArrowUpRight, Sparkles, Send } from 'lucide-react';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
+import { getEcosystems } from '../../../shared/api/client';
 
 interface EcosystemsPageProps {
   onEcosystemClick: (id: string, name: string) => void;
 }
 
 export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
+  console.log('=== EcosystemsPage (features/dashboard) FUNCTION CALLED ===');
   const { theme } = useTheme();
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -16,6 +18,107 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
     status: 'active',
     websiteUrl: ''
   });
+  const [ecosystems, setEcosystems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch ecosystems function
+  const fetchEcosystems = async () => {
+    console.log('fetchEcosystems function called');
+    setIsLoading(true);
+    try {
+      console.log('Fetching ecosystems from API...');
+      const response = await getEcosystems();
+      console.log('Ecosystems API response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Response.ecosystems:', response?.ecosystems);
+      console.log('Is array?', Array.isArray(response?.ecosystems));
+      
+      // Handle different response structures
+      let ecosystemsArray: any[] = [];
+      
+      if (response && Array.isArray(response)) {
+        // Response is directly an array
+        ecosystemsArray = response;
+        console.log('Response is direct array');
+      } else if (response && response.ecosystems && Array.isArray(response.ecosystems)) {
+        // Response has ecosystems property
+        ecosystemsArray = response.ecosystems;
+        console.log('Response has ecosystems property');
+      } else if (response && typeof response === 'object') {
+        // Try to find any array property
+        const keys = Object.keys(response);
+        console.log('Response keys:', keys);
+        for (const key of keys) {
+          if (Array.isArray((response as any)[key])) {
+            ecosystemsArray = (response as any)[key];
+            console.log(`Found array in key: ${key}`);
+            break;
+          }
+        }
+      }
+      
+      if (ecosystemsArray.length === 0) {
+        console.warn('No ecosystems found in response:', response);
+        setEcosystems([]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Transform API response to match UI format
+      const transformed = ecosystemsArray.map((eco: any) => {
+        const firstLetter = eco.name ? eco.name.charAt(0).toUpperCase() : '?';
+        const colors = [
+          'from-[#c9983a] to-[#a67c2e]',
+          'from-[#8b5cf6] to-[#7c3aed]',
+          'from-[#06b6d4] to-[#0891b2]',
+          'from-[#10b981] to-[#059669]',
+          'from-[#f59e0b] to-[#d97706]',
+          'from-[#ef4444] to-[#dc2626]',
+        ];
+        const colorIndex = eco.name ? eco.name.length % colors.length : 0;
+        return {
+          id: eco.id,
+          name: eco.name || 'Unnamed Ecosystem',
+          slug: eco.slug || '',
+          description: eco.description || 'No description available.',
+          projects: eco.project_count || 0,
+          contributors: eco.user_count || 0,
+          website_url: eco.website_url || null,
+          status: eco.status || 'active',
+          letter: firstLetter,
+          color: colors[colorIndex],
+          languages: [] // Can be populated later if needed
+        };
+      });
+      console.log('Transformed ecosystems:', transformed);
+      setEcosystems(transformed);
+    } catch (error) {
+      console.error('Failed to fetch ecosystems:', error);
+      console.error('Error details:', error instanceof Error ? error.message : error);
+      setEcosystems([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch ecosystems on mount and when updated
+  useEffect(() => {
+    console.log('EcosystemsPage useEffect running');
+    console.log('Calling fetchEcosystems...');
+    fetchEcosystems();
+    
+    // Listen for ecosystem updates
+    const handleUpdate = () => {
+      console.log('Ecosystems updated event received');
+      fetchEcosystems();
+    };
+    window.addEventListener('ecosystems-updated', handleUpdate);
+    
+    return () => {
+      window.removeEventListener('ecosystems-updated', handleUpdate);
+    };
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,125 +158,11 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
     });
   };
 
-  const ecosystems = [
-    {
-      id: 1,
-      letter: 'W',
-      name: 'Web3 Ecosystem',
-      projects: 420,
-      contributors: 38,
-      description: 'Projects building decentralized protocols, tooling, and on-chain value',
-      languages: [
-        { name: 'Rust', percentage: 31, color: '#CE422B' },
-        { name: 'TypeScript', percentage: 27, color: '#3178C6' },
-      ],
-      color: 'from-purple-600 to-blue-600',
-    },
-    {
-      id: 2,
-      letter: 'A',
-      name: 'AI & ML Ecosystem',
-      projects: 310,
-      contributors: 22,
-      description: 'Frameworks and tooling for machine learning and AI development',
-      languages: [
-        { name: 'Python', percentage: 48, color: '#3776AB' },
-        { name: 'C++', percentage: 21, color: '#00599C' },
-      ],
-      color: 'from-blue-500 to-cyan-500',
-    },
-    {
-      id: 3,
-      letter: 'B',
-      name: 'Blockchain Infrastructure',
-      projects: 560,
-      contributors: 45,
-      description: 'Core blockchain infrastructures, consensus mechanisms, and network protocols',
-      languages: [
-        { name: 'Go', percentage: 38, color: '#00ADD8' },
-        { name: 'Rust', percentage: 29, color: '#CE422B' },
-      ],
-      color: 'from-indigo-600 to-purple-600',
-    },
-    {
-      id: 4,
-      letter: 'D',
-      name: 'Developer Tools',
-      projects: 720,
-      contributors: 68,
-      description: 'Essential tools and libraries for modern software development',
-      languages: [
-        { name: 'JavaScript', percentage: 42, color: '#F7DF1E' },
-        { name: 'TypeScript', percentage: 35, color: '#3178C6' },
-      ],
-      color: 'from-orange-500 to-red-500',
-    },
-    {
-      id: 5,
-      letter: 'C',
-      name: 'Cloud-Native',
-      projects: 650,
-      contributors: 52,
-      description: 'Container orchestration, microservices, and cloud infrastructure solutions',
-      languages: [
-        { name: 'Go', percentage: 51, color: '#00ADD8' },
-        { name: 'Java', percentage: 18, color: '#007396' },
-      ],
-      color: 'from-green-500 to-teal-500',
-    },
-    {
-      id: 6,
-      letter: 'S',
-      name: 'Security & Privacy',
-      projects: 390,
-      contributors: 28,
-      description: 'Cybersecurity tools, encryption libraries, and privacy-preserving technologies',
-      languages: [
-        { name: 'C', percentage: 34, color: '#555555' },
-        { name: 'Rust', percentage: 28, color: '#CE422B' },
-      ],
-      color: 'from-red-600 to-pink-600',
-    },
-    {
-      id: 7,
-      letter: 'D',
-      name: 'Data Science',
-      projects: 490,
-      contributors: 35,
-      description: 'Data engineering, analytics, and visualization tools for insights',
-      languages: [
-        { name: 'Python', percentage: 56, color: '#3776AB' },
-        { name: 'R', percentage: 22, color: '#276DC3' },
-      ],
-      color: 'from-cyan-600 to-blue-700',
-    },
-    {
-      id: 8,
-      letter: 'M',
-      name: 'Mobile Development',
-      projects: 640,
-      contributors: 41,
-      description: 'Frameworks and tools for iOS, Android, and cross-platform mobile apps',
-      languages: [
-        { name: 'Swift', percentage: 36, color: '#FA7343' },
-        { name: 'Kotlin', percentage: 31, color: '#7F52FF' },
-      ],
-      color: 'from-pink-500 to-rose-500',
-    },
-    {
-      id: 9,
-      letter: 'G',
-      name: 'Gaming & Game Engines',
-      projects: 420,
-      contributors: 33,
-      description: 'Game development frameworks, engines, and gaming infrastructure',
-      languages: [
-        { name: 'C++', percentage: 44, color: '#00599C' },
-        { name: 'C#', percentage: 28, color: '#239120' },
-      ],
-      color: 'from-violet-600 to-purple-700',
-    },
-  ];
+  // Filter ecosystems based on search query
+  const filteredEcosystems = ecosystems.filter(eco =>
+    eco.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (eco.description && eco.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -208,6 +197,8 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
         <input
           type="text"
           placeholder="Search ecosystems..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           className={`w-full pl-12 pr-4 py-3.5 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] shadow-[inset_0px_0px_4px_0px_rgba(0,0,0,0.12)] relative ${
             theme === 'dark'
               ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
@@ -217,8 +208,24 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
       </div>
 
       {/* Ecosystems Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {ecosystems.map((ecosystem) => (
+      {isLoading ? (
+        <div className={`text-center py-12 ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+          Loading ecosystems...
+        </div>
+      ) : filteredEcosystems.length === 0 ? (
+        <div className={`text-center py-12 ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+          {searchQuery ? 'No ecosystems found matching your search.' : 'No ecosystems available yet.'}
+          {!isLoading && ecosystems.length > 0 && (
+            <div className="mt-2 text-xs opacity-70">
+              (Filtered from {ecosystems.length} ecosystems)
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredEcosystems.map((ecosystem) => {
+            console.log('Rendering ecosystem:', ecosystem);
+            return (
           <div
             key={ecosystem.id}
             onClick={() => onEcosystemClick(ecosystem.id, ecosystem.name)}
@@ -267,23 +274,27 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
               {ecosystem.description}
             </p>
 
-            {/* Languages */}
-            <div className="flex items-center gap-3">
-              {ecosystem.languages.map((lang, idx) => (
-                <div key={idx} className="flex items-center gap-1.5">
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full shadow-sm" 
-                    style={{ backgroundColor: lang.color }}
-                  />
-                  <span className={`text-[11px] transition-colors ${
-                    theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                  }`}>{lang.percentage}%</span>
-                </div>
-              ))}
-            </div>
+            {/* Website Link */}
+            {ecosystem.website_url && (
+              <div className="flex items-center gap-2 mt-4">
+                <Globe className={`w-4 h-4 ${theme === 'dark' ? 'text-[#c9983a]' : 'text-[#8b6f3a]'}`} />
+                <a
+                  href={ecosystem.website_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`text-[12px] hover:underline transition-colors ${
+                    theme === 'dark' ? 'text-[#c9983a]' : 'text-[#8b6f3a]'
+                  }`}
+                >
+                  Visit Website
+                </a>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Request Ecosystem Section */}
       <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${
@@ -445,7 +456,7 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
               Cancel
             </ModalButton>
             <ModalButton type="submit" variant="primary">
-              <Sparkles className="w-4 h-4" />
+              <Send className="w-4 h-4" />
               Submit Request
             </ModalButton>
           </ModalFooter>

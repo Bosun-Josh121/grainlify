@@ -1,6 +1,6 @@
+import React, { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { ReactNode } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -35,11 +35,23 @@ export function Modal({
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
+  // Add/remove class to body when modal is open to blur sidebar
+  React.useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
     <div 
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200" 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000] animate-in fade-in duration-200" 
       onClick={onClose}
     >
       <div 
@@ -137,7 +149,7 @@ export function ModalButton({
       <button
         type={type}
         onClick={onClick}
-        className={`px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] ${className}`}
+        className={`px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] flex items-center justify-center gap-2 ${className}`}
       >
         {children}
       </button>

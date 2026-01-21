@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { LeaderboardType, FilterType, Petal, LeaderData } from '../types';
 import { projectsData } from '../data/leaderboardData';
 import { getLeaderboard } from '../../../shared/api/client';
+import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { FallingPetals } from '../components/FallingPetals';
 import { LeaderboardTypeToggle } from '../components/LeaderboardTypeToggle';
 import { LeaderboardHero } from '../components/LeaderboardHero';
@@ -15,6 +16,7 @@ import { ContributorsPodiumSkeleton } from '../components/ContributorsPodiumSkel
 import { ContributorsTableSkeleton } from '../components/ContributorsTableSkeleton';
 
 export function LeaderboardPage() {
+  const { theme } = useTheme();
   const [activeFilter, setActiveFilter] = useState<FilterType>('overall');
   const [leaderboardType, setLeaderboardType] = useState<LeaderboardType>('contributors');
   const [showEcosystemDropdown, setShowEcosystemDropdown] = useState(false);
@@ -54,10 +56,8 @@ export function LeaderboardPage() {
           setIsLoading(false);
         } catch (err) {
           console.error('Failed to fetch leaderboard:', err);
-          // Don't set error - keep loading state to show skeleton forever
-          // Don't set isLoading to false - keep showing skeleton when backend is down
           setLeaderboardData([]);
-          // Keep isLoading as true to show skeleton forever
+          setIsLoading(false); // Set loading to false to show empty state instead of skeleton
         }
       } else {
         // For projects, we don't fetch from API, so set loading to false
@@ -170,10 +170,16 @@ export function LeaderboardPage() {
           <ContributorsPodiumSkeleton />
         )}
         {leaderboardType === 'contributors' && !isLoading && leaderboardData.length > 0 && (
-          <ContributorsPodium topThree={contributorTopThree} isLoaded={isLoaded} />
+          <ContributorsPodium 
+            topThree={contributorTopThree} 
+            isLoaded={isLoaded} 
+            actualCount={leaderboardData.length}
+          />
         )}
         {leaderboardType === 'contributors' && !isLoading && leaderboardData.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div className={`text-center py-8 transition-colors ${
+            theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+          }`}>
             No contributors yet. Be the first to contribute!
           </div>
         )}

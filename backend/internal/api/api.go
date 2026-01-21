@@ -218,6 +218,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Get("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.List())
 	adminGroup.Post("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.Create())
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
+	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())
 
 	webhooks := handlers.NewGitHubWebhooksHandler(cfg, deps.DB, deps.Bus)
 	// Register webhook endpoint with explicit OPTIONS support for CORS

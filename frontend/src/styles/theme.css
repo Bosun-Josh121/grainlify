@@ -198,6 +198,23 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Grainlify Logo Styling */
+.grainlify-logo {
+  color: #c9983a;
+}
+
+.dark .grainlify-logo {
+  color: #c9983a;
+  filter: brightness(1.1);
+}
+
+/* Sidebar blur when modal is open */
+body.modal-open aside {
+  filter: blur(4px);
+  opacity: 0.6;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
