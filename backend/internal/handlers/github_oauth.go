@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -159,19 +160,29 @@ func (h *GitHubOAuthHandler) LoginStart() fiber.Handler {
 			}
 		}
 
-		state := randomState(32)
+		// Generate CSRF token for state validation
+		csrfToken := randomState(32)
 		expiresAt := time.Now().UTC().Add(10 * time.Minute)
 
-		// Store redirect_uri in oauth_states table for later use in callback
+		// Store CSRF token in database for validation (OAuth 2.0 security requirement)
 		_, err := h.db.Pool.Exec(c.Context(), `
 INSERT INTO oauth_states (state, user_id, kind, expires_at, redirect_uri)
 VALUES ($1, NULL, 'github_login', $2, $3)
-`, state, expiresAt, redirectURI)
+`, csrfToken, expiresAt, redirectURI)
 		if err != nil {
 			slog.Error("OAuth login start - failed to store state", "error", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_create_failed"})
 		}
-		slog.Info("OAuth login start - stored redirect_uri in state", "redirect_uri", redirectURI, "state", state)
+
+		// Encode redirect_uri in state parameter (OAuth 2.0 spec recommendation)
+		// Format: base64(csrf_token|redirect_uri)
+		// This allows dynamic redirection while maintaining CSRF protection
+		state := encodeStateWithRedirect(csrfToken, redirectURI)
+		slog.Info("OAuth login start - encoded state with redirect",
+			"csrf_token", csrfToken,
+			"redirect_uri", redirectURI,
+			"encoded_state", state,
+		)
 
 		// Login scopes: identity + email + repo access for later project verification.
 		authURL, err := github.AuthorizeURL(h.cfg.GitHubOAuthClientID, effectiveGitHubRedirect(h.cfg), state, []string{"read:user", "user:email", "repo", "admin:repo_hook", "read:org"})
@@ -202,20 +213,28 @@ func (h *GitHubOAuthHandler) CallbackUnified() fiber.Handler {
 		}
 
 		code := c.Query("code")
-		state := c.Query("state")
-		if code == "" || state == "" {
+		encodedState := c.Query("state")
+		if code == "" || encodedState == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing_code_or_state"})
 		}
 
+		// Decode state parameter to extract CSRF token and redirect_uri (OAuth 2.0 spec)
+		csrfToken, redirectURIFromState, err := decodeStateWithRedirect(encodedState)
+		if err != nil {
+			slog.Error("OAuth callback - failed to decode state", "error", err)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_state_format"})
+		}
+
+		// Validate CSRF token against database (OAuth 2.0 security requirement)
 		var storedKind string
 		var stateUserID *uuid.UUID
 		var storedRedirectURI *string
-		err := h.db.Pool.QueryRow(c.Context(), `
+		err = h.db.Pool.QueryRow(c.Context(), `
 SELECT kind, user_id, redirect_uri
 FROM oauth_states
 WHERE state = $1
   AND expires_at > now()
-`, state).Scan(&storedKind, &stateUserID, &storedRedirectURI)
+`, csrfToken).Scan(&storedKind, &stateUserID, &storedRedirectURI)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_or_expired_state"})
 		}
@@ -223,19 +242,40 @@ WHERE state = $1
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_lookup_failed"})
 		}
 
-		// Log the retrieved redirect_uri for debugging
-		if storedRedirectURI != nil && *storedRedirectURI != "" {
-			slog.Info("OAuth callback - retrieved redirect_uri from state",
-				"redirect_uri", *storedRedirectURI,
+		// Use redirect_uri from state parameter (OAuth 2.0 spec), fallback to database if not in state
+		// Priority: state parameter > database > config
+		// IMPORTANT: Validate redirect_uri from state parameter for security (prevent open redirect)
+		var finalRedirectURI string
+		if redirectURIFromState != "" {
+			// Security: Validate redirect_uri from state parameter against allowed origins
+			if !isAllowedRedirectURI(redirectURIFromState, h.cfg) {
+				slog.Warn("OAuth callback - redirect_uri from state not allowed, rejecting",
+					"redirect_uri", redirectURIFromState,
+				)
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error":   "redirect_uri_not_allowed",
+					"message": "Redirect URI from state parameter is not from an allowed origin",
+				})
+			}
+			finalRedirectURI = redirectURIFromState
+			slog.Info("OAuth callback - using redirect_uri from state parameter",
+				"redirect_uri", finalRedirectURI,
+				"kind", storedKind,
+			)
+		} else if storedRedirectURI != nil && *storedRedirectURI != "" {
+			finalRedirectURI = *storedRedirectURI
+			slog.Info("OAuth callback - using redirect_uri from database (fallback)",
+				"redirect_uri", finalRedirectURI,
 				"kind", storedKind,
 			)
 		} else {
-			slog.Info("OAuth callback - no redirect_uri in state, will use fallback",
+			slog.Info("OAuth callback - no redirect_uri in state or database, will use config fallback",
 				"kind", storedKind,
 			)
 		}
 
-		_, _ = h.db.Pool.Exec(c.Context(), `DELETE FROM oauth_states WHERE state = $1`, state)
+		// Delete used state to prevent replay attacks
+		_, _ = h.db.Pool.Exec(c.Context(), `DELETE FROM oauth_states WHERE state = $1`, csrfToken)
 
 		tr, err := github.ExchangeCode(c.Context(), code, github.OAuthConfig{
 			ClientID:     h.cfg.GitHubOAuthClientID,
@@ -321,16 +361,17 @@ UPDATE users SET github_user_id = $2, updated_at = now() WHERE id = $1
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "token_issue_failed"})
 			}
 
-			// Determine redirect URL priority:
-			// 1. Stored redirect_uri from frontend (enables multi-environment support)
-			// 2. Config GitHubLoginSuccessRedirectURL
-			// 3. Construct from FrontendBaseURL
+			// Determine redirect URL priority (OAuth 2.0 spec: use state parameter):
+			// 1. redirect_uri from state parameter (OAuth 2.0 recommended approach)
+			// 2. redirect_uri from database (fallback for backward compatibility)
+			// 3. Config GitHubLoginSuccessRedirectURL
+			// 4. Construct from FrontendBaseURL
 			// IMPORTANT: Always redirect to override GitHub's Homepage URL default
 			var redirectURL string
-			if storedRedirectURI != nil && *storedRedirectURI != "" {
-				// Use the redirect_uri provided by the frontend (supports preview deployments, forks, etc.)
-				redirectURL = strings.TrimSuffix(*storedRedirectURI, "/") + "/auth/callback"
-				slog.Info("OAuth redirect - using stored redirect_uri", "redirect_url", redirectURL)
+			if finalRedirectURI != "" {
+				// Use the redirect_uri from state parameter (OAuth 2.0 spec)
+				redirectURL = strings.TrimSuffix(finalRedirectURI, "/") + "/auth/callback"
+				slog.Info("OAuth redirect - using redirect_uri from state parameter", "redirect_url", redirectURL)
 			} else if h.cfg.GitHubLoginSuccessRedirectURL != "" {
 				// If GitHubLoginSuccessRedirectURL doesn't already include /auth/callback, append it
 				redirectURL = strings.TrimSuffix(h.cfg.GitHubLoginSuccessRedirectURL, "/")
@@ -473,6 +514,36 @@ func randomState(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// encodeStateWithRedirect encodes both a CSRF token and redirect_uri in the state parameter.
+// Format: base64(csrf_token + "|" + redirect_uri)
+// This follows OAuth 2.0 spec recommendation to use state parameter for dynamic redirection.
+func encodeStateWithRedirect(csrfToken, redirectURI string) string {
+	// If no redirect_uri, just return the CSRF token (backward compatible)
+	if redirectURI == "" {
+		return csrfToken
+	}
+	// Encode: csrf_token|redirect_uri
+	stateData := fmt.Sprintf("%s|%s", csrfToken, redirectURI)
+	return base64.RawURLEncoding.EncodeToString([]byte(stateData))
+}
+
+// decodeStateWithRedirect decodes the state parameter to extract CSRF token and redirect_uri.
+// Returns: (csrfToken, redirectURI, error)
+func decodeStateWithRedirect(encodedState string) (string, string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(encodedState)
+	if err != nil {
+		// If decoding fails, treat entire state as CSRF token (backward compatible)
+		return encodedState, "", nil
+	}
+
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	}
+	// If no separator, entire decoded value is the CSRF token
+	return string(decoded), "", nil
 }
 
 
