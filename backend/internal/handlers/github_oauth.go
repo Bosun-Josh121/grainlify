@@ -19,6 +19,57 @@ import (
 	"github.com/jagadeesh/grainlify/backend/internal/github"
 )
 
+// isAllowedRedirectURI validates that a redirect URI is from an allowed origin.
+// This prevents open redirect vulnerabilities by only allowing:
+// - localhost origins (for development)
+// - *.vercel.app domains (for preview deployments)
+// - Explicit origins from CORS_ORIGINS config
+// - FrontendBaseURL (if configured)
+func isAllowedRedirectURI(redirectURI string, cfg config.Config) bool {
+	parsedURL, err := url.Parse(redirectURI)
+	if err != nil {
+		return false
+	}
+
+	// Extract origin (scheme + host)
+	origin := parsedURL.Scheme + "://" + parsedURL.Host
+
+	// Always allow localhost origins for development
+	if strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "https://localhost:") ||
+		strings.HasPrefix(origin, "https://127.0.0.1:") {
+		return true
+	}
+
+	// Allow all Vercel preview deployments (*.vercel.app)
+	if strings.HasSuffix(origin, ".vercel.app") {
+		return true
+	}
+
+	// Check explicit CORS origins
+	if strings.TrimSpace(cfg.CORSOrigins) != "" {
+		for _, o := range strings.Split(cfg.CORSOrigins, ",") {
+			o = strings.TrimSpace(o)
+			if o == "" {
+				continue
+			}
+			if origin == o || strings.HasPrefix(origin, o+"/") {
+				return true
+			}
+		}
+	}
+
+	// If FrontendBaseURL is set, allow it
+	if cfg.FrontendBaseURL != "" {
+		if origin == cfg.FrontendBaseURL || strings.HasPrefix(origin, cfg.FrontendBaseURL+"/") {
+			return true
+		}
+	}
+
+	return false
+}
+
 type GitHubOAuthHandler struct {
 	cfg config.Config
 	db  *db.DB
@@ -83,10 +134,25 @@ func (h *GitHubOAuthHandler) LoginStart() fiber.Handler {
 
 		// Get redirect_uri from query parameter (frontend origin)
 		redirectURI := c.Query("redirect")
-		// Validate redirect_uri is a valid URL if provided
+		// Validate redirect_uri is a valid URL and from an allowed origin
 		if redirectURI != "" {
-			if _, err := url.Parse(redirectURI); err != nil {
+			parsedURL, err := url.Parse(redirectURI)
+			if err != nil {
 				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_redirect_uri"})
+			}
+
+			// Security: Only allow redirects to whitelisted origins
+			// This prevents open redirect vulnerabilities
+			if !isAllowedRedirectURI(redirectURI, h.cfg) {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error":   "redirect_uri_not_allowed",
+					"message": "Redirect URI must be from an allowed origin (localhost, *.vercel.app, or configured CORS origins)",
+				})
+			}
+
+			// Ensure redirect URI uses http or https scheme
+			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_redirect_uri_scheme"})
 			}
 		}
 
