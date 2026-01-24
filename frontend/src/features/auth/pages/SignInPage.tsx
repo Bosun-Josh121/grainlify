@@ -24,11 +24,16 @@ export function SignInPage() {
     if (isRedirecting) return;
     setIsRedirecting(true);
     console.log('Sign in button clicked');
-    const githubUrl = getGitHubLoginUrl();
-    console.log('Redirecting to:', githubUrl);
-    // Redirect to GitHub OAuth
-    window.location.href = githubUrl;
-  };
+    try {
+          // This is the correct "Internal Door"
+              navigate('/auth/callback?token=unauthorized_test'); 
+                } catch (err) {
+                    // If it fails, we UNLOCK the button so the user can try again
+                        setIsRedirecting(false); 
+                            console.error("Navigation failed:", err);
+                              }
+    }
+  
 
   return (
     <div className={`min-h-screen flex items-center justify-center px-6 relative overflow-hidden transition-colors ${
